@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>肥料船積み管理アプリ</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              green: '#10B981',
+              darkgreen: '#047857',
+              red: '#EF4444',
+              orange: '#F59E0B',
+              blue: '#2563EB'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* タッチターゲット確保と視認性強化スタイル */
+    body {
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+    .btn-touch {
+      min-height: 50px;
+      min-width: 50px;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 12px;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans pb-12">
+
+  <!-- ==================== ヘッダー ==================== -->
+  <header class="bg-slate-800 text-white p-3 sticky top-0 z-40 shadow-md">
+    <div class="flex justify-between items-center mb-2">
+      <div class="flex items-center space-x-2">
+        <span id="date-vessel-display" class="font-bold text-base sm:text-lg text-amber-300">10月20日 住吉丸</span>
+        <span id="online-badge" class="px-2 py-0.5 text-xs font-bold rounded-full bg-green-500 text-white flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span> オンライン
+        </span>
+      </div>
+      <!-- 役割切り替え -->
+      <div class="flex bg-slate-700 p-1 rounded-lg border border-slate-600">
+        <button id="role-shore-btn" onclick="setRole('shore')" class="px-3 py-1.5 rounded-md text-sm font-bold transition-colors btn-touch">陸上</button>
+        <button id="role-ship-btn" onclick="setRole('ship')" class="px-3 py-1.5 rounded-md text-sm font-bold transition-colors btn-touch">船内</button>
+      </div>
+    </div>
+
+    <!-- 設定・作業中断アクションバー -->
+    <div class="flex justify-between items-center gap-2 pt-1 border-t border-slate-700">
+      <button onclick="toggleInterrupt()" id="interrupt-btn" class="flex-1 py-2 px-3 rounded-lg font-bold text-white bg-red-600 active:bg-red-700 flex items-center justify-center gap-1 shadow btn-touch">
+        <span class="text-xl">⚠️</span> <span id="interrupt-btn-text">作業中断</span>
+      </button>
+      <button onclick="openCsvModal()" class="px-3 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-xs font-bold btn-touch">
+        ⚙ CSV設定
+      </button>
+    </div>
+  </header>
+
+  <!-- 中断警報バナー（全体共通） -->
+  <div id="interrupt-banner" class="hidden bg-red-600 text-white font-extrabold text-center py-3 text-lg animate-bounce shadow-lg sticky top-[98px] z-30">
+    ⚠️ 船内作業中断中 ⚠️
+  </div>
+
+  <main class="p-3 max-w-2xl mx-auto space-y-4">
+
+    <!-- 投入No. 表示部 -->
+    <div class="bg-white p-3 rounded-xl shadow border border-gray-200 flex justify-between items-center">
+      <div>
+        <span class="text-xs text-gray-500 font-bold block">現在の作業ステート</span>
+        <span id="current-no-display" class="text-2xl sm:text-3xl font-black text-blue-700">投入No.001</span>
+      </div>
+      <div id="lock-status-badge" class="px-3 py-1 rounded-lg font-bold text-sm bg-gray-200 text-gray-700">
+        通常進行中
+      </div>
+    </div>
+
+    <!-- 船内完了通知バナー（船内表示＆陸上リアルタイム通知カード） -->
+    <div id="ship-complete-banner" class="hidden bg-emerald-600 text-white p-4 rounded-xl shadow-lg border-2 border-emerald-300 relative">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">✅</span>
+          <div>
+            <h3 id="ship-complete-title" class="font-bold text-lg">投入No.001 船内確認完了</h3>
+            <p class="text-xs text-emerald-100">船内側の確認操作が正常に完了しました。</p>
+          </div>
+        </div>
+        <button onclick="dismissShipCompleteBanner()" class="bg-white text-emerald-800 font-bold px-4 py-2 rounded-lg text-sm shadow active:bg-emerald-100 btn-touch">
+          完了・解除
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 2×2 製品確認カード配置 ==================== -->
+    <section class="bg-white p-3 rounded-xl shadow border border-gray-200">
+      <h2 class="text-sm font-bold text-gray-500 mb-2">製品確認 (2×2 配置)</h2>
+      <div class="card-grid">
+        <!-- 指定レイアウト: 左上:② / 右上:④ / 左下:① / 右下:③ -->
+        <!-- 左上: ② -->
+        <div id="card-pos-2" onclick="handleCardClick(1)" class="p-3 rounded-xl border-4 transition-all flex flex-col justify-between bg-gray-50 border-gray-300 min-h-[110px] cursor-pointer">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500">製品No.2</span>
+            <span id="card-status-1" class="text-xs font-extrabold px-2 py-0.5 rounded bg-gray-200 text-gray-600">未確認</span>
+          </div>
+          <div id="card-name-1" class="text-xl font-black my-1 text-gray-800">未選択</div>
+          <div id="card-sub-1" class="text-xs text-gray-500">---</div>
+        </div>
+
+        <!-- 右上: ④ -->
+        <div id="card-pos-4" onclick="handleCardClick(3)" class="p-3 rounded-xl border-4 transition-all flex flex-col justify-between bg-gray-50 border-gray-300 min-h-[110px] cursor-pointer">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500">製品No.4</span>
+            <span id="card-status-3" class="text-xs font-extrabold px-2 py-0.5 rounded bg-gray-200 text-gray-600">未確認</span>
+          </div>
+          <div id="card-name-3" class="text-xl font-black my-1 text-gray-800">未選択</div>
+          <div id="card-sub-3" class="text-xs text-gray-500">---</div>
+        </div>
+
+        <!-- 左下: ① -->
+        <div id="card-pos-1" onclick="handleCardClick(0)" class="p-3 rounded-xl border-4 transition-all flex flex-col justify-between bg-gray-50 border-gray-300 min-h-[110px] cursor-pointer">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500">製品No.1</span>
+            <span id="card-status-0" class="text-xs font-extrabold px-2 py-0.5 rounded bg-gray-200 text-gray-600">未確認</span>
+          </div>
+          <div id="card-name-0" class="text-xl font-black my-1 text-gray-800">未選択</div>
+          <div id="card-sub-0" class="text-xs text-gray-500">---</div>
+        </div>
+
+        <!-- 右下: ③ -->
+        <div id="card-pos-3" onclick="handleCardClick(2)" class="p-3 rounded-xl border-4 transition-all flex flex-col justify-between bg-gray-50 border-gray-300 min-h-[110px] cursor-pointer">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500">製品No.3</span>
+            <span id="card-status-2" class="text-xs font-extrabold px-2 py-0.5 rounded bg-gray-200 text-gray-600">未確認</span>
+          </div>
+          <div id="card-name-2" class="text-xl font-black my-1 text-gray-800">未選択</div>
+          <div id="card-sub-2" class="text-xs text-gray-500">---</div>
+        </div>
+      </div>
+
+      <!-- 陸上用アクションボタン -->
+      <div id="shore-actions" class="mt-4 flex gap-2">
+        <button id="submit-ok-btn" onclick="submitShoreOK()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-md active:scale-95 transition-transform btn-touch">
+          投入 OK
+        </button>
+      </div>
+
+      <!-- 船内用アクションボタン・保留エリア -->
+      <div id="ship-actions" class="mt-4 space-y-3 hidden">
+        <div class="flex justify-between items-center bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+          <span class="text-sm font-bold text-amber-800">積み付け保留バッファ</span>
+          <button onclick="holdSelectedCard()" class="px-3 py-1.5 bg-amber-500 text-white rounded-md text-xs font-bold btn-touch shadow">
+            選択中の製品を保留にする
+          </button>
+        </div>
+        <div id="hold-buffer-list" class="flex flex-wrap gap-2 p-2 bg-gray-100 rounded-lg min-h-[44px]">
+          <span class="text-xs text-gray-400 self-center">保留製品なし</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 7. 積み付けマップ (船内メイン) ==================== -->
+    <section id="stowage-map-section" class="bg-white p-3 rounded-xl shadow border border-gray-200 hidden">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-base font-bold text-gray-800 flex items-center gap-1">
+          🚢 積み付けマップ <span class="text-xs font-normal text-gray-500">(8列 × 4段)</span>
+        </h2>
+        <!-- 奥行き(行)切り替え -->
+        <div class="flex items-center space-x-1">
+          <span class="text-xs text-gray-500 font-bold">奥行(行):</span>
+          <select id="map-depth-select" onchange="renderMap()" class="bg-gray-100 border border-gray-300 font-bold text-sm rounded-md p-1">
+            <option value="1">1 行目</option>
+            <option value="2">2 行目</option>
+            <option value="3">3 行目</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 今回承認された製品のパレット選択 -->
+      <div class="mb-3">
+        <div class="text-xs font-bold text-gray-600 mb-1">配置する銘柄を選択してください:</div>
+        <div id="map-palette" class="flex flex-wrap gap-2">
+          <!-- JSで承認された銘柄ボタンを動的生成 -->
+        </div>
+      </div>
+
+      <!-- 区画インジケータ -->
+      <div class="grid grid-cols-3 text-center text-xs font-bold bg-slate-100 py-1 rounded-t border text-slate-600 mb-1">
+        <div>オモテ (Bow)</div>
+        <div>中央 (Mid)</div>
+        <div>トモ (Stern)</div>
+      </div>
+
+      <!-- マップグリッド: 8列 (A-H) × 4段 (4-1) -->
+      <div class="overflow-x-auto">
+        <div class="min-w-[340px]">
+          <!-- 列ヘッダー A-H -->
+          <div class="grid grid-cols-8 gap-1 text-center text-xs font-bold text-gray-500 mb-1">
+            <div>A</div><div>B</div><div>C</div><div>D</div><div>E</div><div>F</div><div>G</div><div>H</div>
+          </div>
+          <!-- 4段のグリッド（上から段数4, 3, 2, 1） -->
+          <div id="map-grid" class="space-y-1">
+            <!-- JSで動的生成 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <button onclick="completeShipStowage()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base rounded-xl shadow active:scale-95 transition-transform btn-touch">
+          船内積み付け完了 (在庫更新)
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== 在庫表 (下部固定) ==================== -->
+    <section class="bg-white p-3 rounded-xl shadow border border-gray-200">
+      <div class="flex justify-between items-center mb-2">
+        <h2 class="text-sm font-bold text-gray-600">📦 在庫一覧表</h2>
+        <span class="text-xs text-gray-400">リアルタイム同期中</span>
+      </div>
+      <div class="overflow-x-auto max-h-60">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0">
+            <tr>
+              <th class="p-2">銘柄</th>
+              <th class="p-2">重量</th>
+              <th class="p-2">配数</th>
+              <th class="p-2 text-right">パレット残</th>
+            </tr>
+          </thead>
+          <tbody id="inventory-table-body" class="divide-y divide-gray-100">
+            <!-- JSで動的生成 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== モーダル: 銘柄選択（陸上用） ==================== -->
+  <div id="brand-select-modal" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-4 max-h-[85vh] flex flex-col shadow-2xl">
+      <div class="flex justify-between items-center border-b pb-2 mb-3">
+        <h3 id="modal-card-title" class="text-lg font-black text-gray-800">製品銘柄の選択</h3>
+        <button onclick="closeBrandModal()" class="text-gray-400 font-bold text-xl px-2">✕</button>
+      </div>
+      <div class="overflow-y-auto flex-1 space-y-2 pr-1" id="brand-list-container">
+        <!-- JSで銘柄ボタン一覧を生成 -->
+      </div>
+      <button onclick="closeBrandModal()" class="mt-3 w-full py-2.5 bg-gray-200 font-bold text-gray-700 rounded-lg text-sm btn-touch">
+        キャンセル
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== モーダル: CSV・初期データ入力 ==================== -->
+  <div id="csv-modal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 hidden">
+    <div class="bg-white w-full max-w-md rounded-2xl p-4 max-h-[90vh] flex flex-col shadow-2xl">
+      <h3 class="text-lg font-black text-gray-800 mb-2">CSVデータ一括更新</h3>
+      <p class="text-xs text-gray-500 mb-2">投入計画CSVテキストを直接貼り付けて保存してください。</p>
+      <textarea id="csv-textarea" class="w-full h-48 p-2 border border-gray-300 rounded-lg font-mono text-xs mb-3" placeholder="１０月２０日&#10;船名:住吉丸&#10;&#10;銘柄	重量	配数	パレット総数&#10;マグ	20	60	320..."></textarea>
+      <div class="flex gap-2">
+        <button onclick="loadCsvData()" class="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-lg text-sm btn-touch">更新実行</button>
+        <button onclick="closeCsvModal()" class="py-2.5 px-4 bg-gray-200 text-gray-700 font-bold rounded-lg text-sm btn-touch">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Firebase & アプリケーションロジック ==================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    // -----------------------------------------------------------------
+    // 1. Firebase 初期設定
+    // -----------------------------------------------------------------
+    // ★実際のFirebaseプロジェクトの設定情報に置き換えて使用してください★
+    const firebaseConfig = {
+      apiKey: "AIzaSyDemoDummyKeyForFertilizerApp",
+      authDomain: "fertilizer-ship-demo.firebaseapp.com",
+      databaseURL: "https://fertilizer-ship-demo-default-rtdb.firebaseio.com",
+      projectId: "fertilizer-ship-demo",
+      storageBucket: "fertilizer-ship-demo.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:demo"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const dbRef = ref(db, 'fertilizerApp/appState');
+
+    // -----------------------------------------------------------------
+    // 2. アプリ基本データ構造 (appState)
+    // -----------------------------------------------------------------
+    const defaultState = {
+      dateStr: "10月20日",
+      vesselName: "住吉丸",
+      currentNo: 1,
+      isInterrupted: false,
+      isShipCompleted: false, // 船内確認完了フラグ
+      isPendingNextOK: false,  // 陸上側の待機フラグ
+      selectedCardIndex: null, // モーダル操作用
+      selectedPaletteBrand: null, // マップ配置用
+      cards: [
+        { id: 1, brandCode: "", displayName: "", fullName: "", status: "未確認" },
+        { id: 2, brandCode: "", displayName: "", fullName: "", status: "未確認" },
+        { id: 3, brandCode: "", displayName: "", fullName: "", status: "未確認" },
+        { id: 4, brandCode: "", displayName: "", fullName: "", status: "未確認" }
+      ],
+      holdBuffer: [], // 保留製品銘柄リスト
+      inventory: [
+        { displayName: "マグ", fullName: "マグネシウム肥料", weight: 20, batch: 60, pallets: 320 },
+        { displayName: "ロロ", fullName: "ロロ複合肥料", weight: 20, batch: 50, pallets: 120 },
+        { displayName: "９ホ", fullName: "9号ホウソ含有", weight: 20, batch: 50, pallets: 100 },
+        { displayName: "４ホ", fullName: "4号ホウソ含有", weight: 20, batch: 50, pallets: 100 },
+        { displayName: "リュウマグF", fullName: "リュウマグF", weight: 15, batch: 60, pallets: 80 },
+        { displayName: "タ６２５BR", fullName: "タ６２５BR", weight: 20, batch: 50, pallets: 50 },
+        { displayName: "アケ１", fullName: "アケボノ1号", weight: 20, batch: 50, pallets: 30 },
+        { displayName: "カル", fullName: "カルカル肥料", weight: 20, batch: 60, pallets: 30 },
+        { displayName: "ホス", fullName: "ホスホリン", weight: 20, batch: 60, pallets: 30 },
+        { displayName: "カスタム", fullName: "カスタム専用化成", weight: 20, batch: 60, pallets: 30 },
+        { displayName: "スカイ３１１３", fullName: "スカイ３１１３", weight: 15, batch: 60, pallets: 30 },
+        { displayName: "ララ", fullName: "ララ肥料", weight: 20, batch: 50, pallets: 50 },
+        { displayName: "アーゼツブ", fullName: "アーゼツブ粒状", weight: 15, batch: 60, pallets: 30 },
+        { displayName: "４４４BE", fullName: "４４４BE化成", weight: 20, batch: 50, pallets: 30 },
+        { displayName: "５７８１CE", fullName: "５７８１CE化成", weight: 20, batch: 50, pallets: 30 }
+      ],
+      // 8列 (0-7: A-H) x 4段 (0-3: 1-4段) x 3行 (1-3)
+      stowageMap: {} 
+    };
+
+    let appState = { ...defaultState };
+    let currentRole = 'shore'; // 'shore' (陸上) or 'ship' (船内)
+
+    // -----------------------------------------------------------------
+    // 3. リアルタイムデータ同期 & リスナー登録
+    // -----------------------------------------------------------------
+    onValue(dbRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        appState = data;
+      } else {
+        // データがまだ無ければ初期状態を登録
+        saveState();
+      }
+      renderUI();
+    });
+
+    function saveState() {
+      set(dbRef, appState);
+    }
+
+    window.saveState = saveState;
+
+    // -----------------------------------------------------------------
+    // 4. UIレンダリング & ビュー切り替え
+    // -----------------------------------------------------------------
+    window.setRole = function(role) {
+      currentRole = role;
+      document.getElementById('role-shore-btn').className = role === 'shore' 
+        ? 'px-3 py-1.5 rounded-md text-sm font-bold bg-blue-600 text-white btn-touch shadow' 
+        : 'px-3 py-1.5 rounded-md text-sm font-bold text-gray-300 hover:bg-slate-600 btn-touch';
+      document.getElementById('role-ship-btn').className = role === 'ship' 
+        ? 'px-3 py-1.5 rounded-md text-sm font-bold bg-emerald-600 text-white btn-touch shadow' 
+        : 'px-3 py-1.5 rounded-md text-sm font-bold text-gray-300 hover:bg-slate-600 btn-touch';
+      
+      renderUI();
+    };
+
+    function renderUI() {
+      // 日付・船名表示
+      document.getElementById('date-vessel-display').innerText = `${appState.dateStr} ${appState.vesselName}`;
+      document.getElementById('current-no-display').innerText = `投入No.${String(appState.currentNo).padStart(3, '0')}`;
+
+      // 中断フラグ
+      const interruptBanner = document.getElementById('interrupt-banner');
+      const interruptBtnText = document.getElementById('interrupt-btn-text');
+      if (appState.isInterrupted) {
+        interruptBanner.classList.remove('hidden');
+        interruptBtnText.innerText = "中断解除";
+      } else {
+        interruptBanner.classList.add('hidden');
+        interruptBtnText.innerText = "作業中断";
+      }
+
+      // 4カードのレンダリング
+      appState.cards.forEach((card, idx) => {
+        const nameEl = document.getElementById(`card-name-${idx}`);
+        const subEl = document.getElementById(`card-sub-${idx}`);
+        const statusEl = document.getElementById(`card-status-${idx}`);
+        const cardBox = document.getElementById(`card-pos-${idx + 1}`);
+
+        nameEl.innerText = card.displayName || "未選択";
+        subEl.innerText = card.fullName ? `${card.fullName}` : "---";
+        statusEl.innerText = card.status;
+
+        // 状態別スタイル適用
+        cardBox.className = "p-3 rounded-xl border-4 transition-all flex flex-col justify-between min-h-[110px] cursor-pointer ";
+        if (card.status === "✓ 承認済み") {
+          cardBox.className += "bg-emerald-50 border-emerald-500 shadow-sm";
+          statusEl.className = "text-xs font-extrabold px-2 py-0.5 rounded bg-emerald-600 text-white";
+        } else if (card.displayName) {
+          cardBox.className += "bg-blue-50 border-blue-400";
+          statusEl.className = "text-xs font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-800";
+        } else {
+          cardBox.className += "bg-gray-50 border-gray-300";
+          statusEl.className = "text-xs font-extrabold px-2 py-0.5 rounded bg-gray-200 text-gray-600";
+        }
+      });
+
+      // アクション領域表示切り替え
+      const shoreActions = document.getElementById('shore-actions');
+      const shipActions = document.getElementById('ship-actions');
+      const stowageSection = document.getElementById('stowage-map-section');
+
+      if (currentRole === 'shore') {
+        shoreActions.classList.remove('hidden');
+        shipActions.classList.add('hidden');
+        stowageSection.classList.add('hidden');
+      } else {
+        shoreActions.classList.add('hidden');
+        shipActions.classList.remove('hidden');
+        // 全承認完了で積み付けマップを表示
+        const allApproved = appState.cards.every(c => c.status === "✓ 承認済み" && c.displayName);
+        if (allApproved) {
+          stowageSection.classList.remove('hidden');
+          renderMapPalette();
+          renderMap();
+        } else {
+          stowageSection.classList.add('hidden');
+        }
+      }
+
+      // インターロック & 完了バナー制御
+      const lockBadge = document.getElementById('lock-status-badge');
+      const completeBanner = document.getElementById('ship-complete-banner');
+      const completeTitle = document.getElementById('ship-complete-title');
+
+      if (appState.isShipCompleted) {
+        completeBanner.classList.remove('hidden');
+        completeTitle.innerText = `投入No.${String(appState.currentNo).padStart(3, '0')} 船内確認完了`;
+        lockBadge.innerText = "船内確認完了 (ロック中)";
+        lockBadge.className = "px-3 py-1 rounded-lg font-bold text-sm bg-amber-500 text-white animate-pulse";
+      } else {
+        completeBanner.classList.add('hidden');
+        lockBadge.innerText = "通常進行中";
+        lockBadge.className = "px-3 py-1 rounded-lg font-bold text-sm bg-gray-200 text-gray-700";
+      }
+
+      // 保留バッファレンダリング
+      renderHoldBuffer();
+
+      // 在庫表レンダリング
+      renderInventory();
+    }
+
+    // -----------------------------------------------------------------
+    // 5. カード操作 & 承認ロジック
+    // -----------------------------------------------------------------
+    window.handleCardClick = function(index) {
+      // 作業中断中の修正ルール
+      if (appState.isInterrupted) {
+        openBrandModal(index);
+        return;
+      }
+
+      if (currentRole === 'shore') {
+        // 陸上: タップで銘柄選択モーダル表示
+        openBrandModal(index);
+      } else {
+        // 船内: タップで「承認済み」トグル
+        if (!appState.cards[index].displayName) return;
+        const current = appState.cards[index].status;
+        appState.cards[index].status = (current === "✓ 承認済み") ? "未確認" : "✓ 承認済み";
+        
+        // 全承認チェック
+        checkAllApproved();
+        saveState();
+      }
+    };
+
+    function checkAllApproved() {
+      const allApproved = appState.cards.every(c => c.status === "✓ 承認済み" && c.displayName !== "");
+      if (allApproved) {
+        appState.isShipCompleted = true;
+      }
+    }
+
+    // 陸上: 投入OK処理
+    window.submitShoreOK = function() {
+      if (appState.isShipCompleted) {
+        alert("船内側の確認完了操作が終わるまで次の投入を開始できません (ロック制御中)。");
+        return;
+      }
+
+      const hasProduct = appState.cards.some(c => c.displayName !== "");
+      if (!hasProduct) {
+        alert("製品銘柄が選択されていません。");
+        return;
+      }
+
+      // 在庫減算
+      appState.cards.forEach(card => {
+        if (card.displayName) {
+          const item = appState.inventory.find(i => i.displayName === card.displayName);
+          if (item && item.pallets > 0) {
+            item.pallets -= 1; // 投入OKで1パレット減算
+          }
+        }
+      });
+
+      // 船内確認待ち状態へ
+      alert(`投入No.${String(appState.currentNo).padStart(3, '0')} の投入OKを送信しました。在庫を更新しました。`);
+      saveState();
+    };
+
+    // 船内完了バナー解除（次投入へ移行）
+    window.dismissShipCompleteBanner = function() {
+      appState.isShipCompleted = false;
+      appState.currentNo += 1;
+      // カードクリア
+      appState.cards = appState.cards.map(c => ({ ...c, brandCode: "", displayName: "", fullName: "", status: "未確認" }));
+      saveState();
+    };
+
+    // -----------------------------------------------------------------
+    // 6. 保留バッファ機能
+    // -----------------------------------------------------------------
+    window.holdSelectedCard = function() {
+      const approvedCards = appState.cards.filter(c => c.displayName);
+      if (approvedCards.length === 0) {
+        alert("保留可能な製品がありません。");
+        return;
+      }
+      const target = approvedCards[0]; // 簡易的に最初の選択製品を保留へ
+      appState.holdBuffer.push({ ...target });
+      saveState();
+    };
+
+    function renderHoldBuffer() {
+      const container = document.getElementById('hold-buffer-list');
+      if (appState.holdBuffer.length === 0) {
+        container.innerHTML = '<span class="text-xs text-gray-400 self-center">保留製品なし</span>';
+        return;
+      }
+      container.innerHTML = appState.holdBuffer.map((item, idx) => `
+        <div class="px-2 py-1 bg-amber-200 text-amber-900 border border-amber-300 rounded font-bold text-xs flex items-center gap-1">
+          <span>${item.displayName}</span>
+          <button onclick="releaseHold(${idx})" class="text-red-600 font-extrabold ml-1">✕</button>
+        </div>
+      `).join('');
+    }
+
+    window.releaseHold = function(index) {
+      appState.holdBuffer.splice(index, 1);
+      saveState();
+    };
+
+    // -----------------------------------------------------------------
+    // 7. 積み付けマップ (8列 × 4段 × 3行)
+    // -----------------------------------------------------------------
+    function renderMapPalette() {
+      const container = document.getElementById('map-palette');
+      // 承認済み製品 + 保留製品をパレットとして表示
+      const available = [...appState.cards.filter(c => c.displayName), ...appState.holdBuffer];
+      
+      if (available.length === 0) {
+        container.innerHTML = `<span class="text-xs text-gray-400">配置可能な銘柄がありません</span>`;
+        return;
+      }
+
+      container.innerHTML = available.map((item, idx) => {
+        const isSelected = appState.selectedPaletteBrand === item.displayName;
+        return `
+          <button onclick="selectPaletteBrand('${item.displayName}')" class="px-3 py-2 rounded-lg font-black text-sm border-2 transition-all btn-touch ${
+            isSelected 
+              ? 'bg-emerald-600 text-white border-emerald-700 shadow-lg scale-105' 
+              : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+          }">
+            ${item.displayName}
+          </button>
+        `;
+      }).join('');
+    }
+
+    window.selectPaletteBrand = function(brandName) {
+      appState.selectedPaletteBrand = brandName;
+      renderMapPalette();
+    };
+
+    window.renderMap = function() {
+      const grid = document.getElementById('map-grid');
+      const depth = document.getElementById('map-depth-select').value;
+      const columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+      
+      let html = '';
+      // 上から 4段 -> 1段
+      for (let level = 4; level >= 1; level--) {
+        html += `<div class="grid grid-cols-8 gap-1">`;
+        for (let colIdx = 0; colIdx < 8; colIdx++) {
+          const col = columns[colIdx];
+          const cellKey = `${depth}_${level}_${col}`;
+          const cellData = appState.stowageMap[cellKey];
+
+          if (cellData) {
+            html += `
+              <div onclick="handleCellClick('${cellKey}')" class="bg-emerald-500 text-white font-extrabold text-xs h-12 rounded flex flex-col items-center justify-center cursor-pointer shadow border border-emerald-600 active:scale-95">
+                <span>${cellData.displayName}</span>
+                <span class="text-[9px] opacity-80">${col}${level}</span>
+              </div>
+            `;
+          } else {
+            html += `
+              <div onclick="handleCellClick('${cellKey}')" class="bg-gray-100 border border-dashed border-gray-300 h-12 rounded flex items-center justify-center text-gray-400 text-[10px] font-bold cursor-pointer hover:bg-gray-200">
+                ${col}${level}
+              </div>
+            `;
+          }
+        }
+        html += `</div>`;
+      }
+      grid.innerHTML = html;
+    };
+
+    window.handleCellClick = function(cellKey) {
+      const currentCell = appState.stowageMap[cellKey];
+
+      if (currentCell) {
+        // 配置済みマスの詳細表示＆解除
+        const confirmClear = confirm(`【配置情報】\n正式銘柄: ${currentCell.fullName}\n袋数: ${currentCell.batch}袋\n重量: ${currentCell.weight}kg\n\nこのマスの配置を解除しますか？`);
+        if (confirmClear) {
+          delete appState.stowageMap[cellKey];
+          saveState();
+        }
+      } else {
+        // マスへ配置
+        if (!appState.selectedPaletteBrand) {
+          alert("上部のパレットから配置する銘柄をタップして選択してください。");
+          return;
+        }
+        const invItem = appState.inventory.find(i => i.displayName === appState.selectedPaletteBrand);
+        appState.stowageMap[cellKey] = {
+          displayName: invItem.displayName,
+          fullName: invItem.fullName,
+          weight: invItem.weight,
+          batch: invItem.batch
+        };
+        saveState();
+      }
+    };
+
+    // 船内積み付け完了 (管理在庫から数を減らす)
+    window.completeShipStowage = function() {
+      alert("船内積み付けが確定されました。在庫表と連携されます。");
+      saveState();
+    };
+
+    // -----------------------------------------------------------------
+    // 8. 銘柄選択モーダル & 中断モード & CSV連携
+    // -----------------------------------------------------------------
+    function openBrandModal(cardIdx) {
+      appState.selectedCardIndex = cardIdx;
+      document.getElementById('modal-card-title').innerText = `製品No.${cardIdx + 1} 銘柄選択`;
+      
+      const container = document.getElementById('brand-list-container');
+      container.innerHTML = appState.inventory.map(item => `
+        <button onclick="selectBrandForCard('${item.displayName}', '${item.fullName}')" class="w-full text-left p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl flex justify-between items-center btn-touch active:bg-blue-100">
+          <div>
+            <div class="font-black text-base text-gray-800">${item.displayName}</div>
+            <div class="text-xs text-gray-500">${item.fullName} (${item.weight}kg)</div>
+          </div>
+          <span class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">パレット残: ${item.pallets}</span>
+        </button>
+      `).join('');
+
+      document.getElementById('brand-select-modal').classList.remove('hidden');
+    }
+
+    window.closeBrandModal = function() {
+      document.getElementById('brand-select-modal').classList.add('hidden');
+    };
+
+    window.selectBrandForCard = function(displayName, fullName) {
+      if (appState.selectedCardIndex !== null) {
+        appState.cards[appState.selectedCardIndex].displayName = displayName;
+        appState.cards[appState.selectedCardIndex].fullName = fullName;
+        appState.cards[appState.selectedCardIndex].status = "未確認";
+        saveState();
+      }
+      closeBrandModal();
+    };
+
+    window.toggleInterrupt = function() {
+      appState.isInterrupted = !appState.isInterrupted;
+      saveState();
+    };
+
+    // 在庫表描画
+    function renderInventory() {
+      const tbody = document.getElementById('inventory-table-body');
+      tbody.innerHTML = appState.inventory.map(item => `
+        <tr class="hover:bg-gray-50">
+          <td class="p-2 font-black text-gray-800">${item.displayName} <span class="text-[10px] text-gray-400 font-normal">(${item.fullName})</span></td>
+          <td class="p-2 text-gray-600">${item.weight}kg</td>
+          <td class="p-2 text-gray-600">${item.batch}</td>
+          <td class="p-2 text-right font-black ${item.pallets > 0 ? 'text-blue-600' : 'text-red-500'}">${item.pallets}</td>
+        </tr>
+      `).join('');
+    }
+
+    // CSV モーダル
+    window.openCsvModal = function() {
+      document.getElementById('csv-modal').classList.remove('hidden');
+    };
+    window.closeCsvModal = function() {
+      document.getElementById('csv-modal').classList.add('hidden');
+    };
+
+    window.loadCsvData = function() {
+      const text = document.getElementById('csv-textarea').value.trim();
+      if (!text) return;
+
+      const lines = text.split('\n');
+      const newInventory = [];
+      
+      lines.forEach((line, idx) => {
+        if (idx === 0 && line.includes("月")) appState.dateStr = line.trim();
+        if (line.includes("船名:")) appState.vesselName = line.replace("船名:", "").trim();
+
+        // 簡易タブ/スペース区切り解析
+        const parts = line.split(/[\t,]+/).map(s => s.trim()).filter(Boolean);
+        if (parts.length >= 4 && !isNaN(parseFloat(parts[1]))) {
+          newInventory.push({
+            displayName: parts[0],
+            fullName: parts[0],
+            weight: parseFloat(parts[1]) || 20,
+            batch: parseInt(parts[2]) || 50,
+            pallets: parseInt(parts[3]) || 0
+          });
+        }
+      });
+
+      if (newInventory.length > 0) {
+        appState.inventory = newInventory;
+        saveState();
+        alert("CSVデータから船名・日付・在庫一覧を更新しました！");
+        closeCsvModal();
+      } else {
+        alert("有効な銘柄データ行が見つかりませんでした。フォーマットを確認してください。");
+      }
+    };
+
+    // 初期起動レンダリング
+    renderUI();
+  </script>
+</body>
+</html>
